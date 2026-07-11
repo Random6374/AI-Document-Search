@@ -1,10 +1,12 @@
 from fastapi import FastAPI,UploadFile,File
 from app.pdf_utils import extract_text
 from app.chunking import chunk_text
-from app.embeddings import create_embedding
-from sentence_transformers import util
+from app.embeddings import create_embeddings
+from app.retrieval import retrieve_chunks
+from app.LLM import build_prompt,generate_answer
+from app.models import QuestionRequest
 import os
-
+t=[]
 app=FastAPI()
 
 @app.get("/")
@@ -15,43 +17,24 @@ def root():
 
 @app.post("/upload")
 async def upload(file: UploadFile = File(...)):
-    filepath = os.path.join("uploads", file.filename)
+    filepath = os.path.join("uploads", "current.pdf")
 
     with open(filepath, "wb") as f:
         f.write(await file.read())
 
-    return {
-        "message": "Upload successful",
-        "filename": file.filename
-    }       
-
-@app.get("/test")
-def test():
-    text = extract_text("uploads/thinkpython2.pdf")
+    text = extract_text("uploads/current.pdf")
     chunks=chunk_text(text)
+
+    global t 
+    t = create_embeddings(chunks)
     
-    return { 
-        "num_chunks":len(chunks),
-        "first_chunk":chunks[0]
-    }
-
-@app.get("/embedding-test")
-def embedding_test():
-
-    sentence1 = "A cat is sleeping on the sofa."
-    sentence2 = "A kitten is resting on the couch."
-    sentence3 = "Python dictionaries store key value pairs."
-
-    e1 = create_embedding(sentence1)
-    e2 = create_embedding(sentence2)
-    e3 = create_embedding(sentence3)
-
-    cvk=util.cos_sim(e1,e2).item()
-    cvp=util.cos_sim(e1,e3).item()
+    return "PDF Processed",len(t)
+    
+@app.post("/ask")
+async def ask(question:QuestionRequest):
+    best=retrieve_chunks(question.question,t)
+    answer=generate_answer(question.question,best)
 
     return {
-        "cvk":cvk,
-        "cvp":cvp
+        "answer":answer.output_text
     }
-
-    
